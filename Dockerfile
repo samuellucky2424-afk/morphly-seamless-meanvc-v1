@@ -4,13 +4,14 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     HF_HOME=/models/huggingface \
-    TORCH_HOME=/models/torch
+    TORCH_HOME=/models/torch \
+    MEANVC_PY=/opt/venvs/meanvc/bin/python \
+    SEAMLESS_PY=/opt/venvs/seamless/bin/python
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git git-lfs ffmpeg libsndfile1 libsndfile1-dev build-essential ca-certificates curl \
-    python3.11 python3.11-dev python3-pip && \
-    rm -rf /var/lib/apt/lists/* && \
-    python3.11 -m pip install --upgrade pip setuptools wheel
+    python3.11 python3.11-dev python3.11-venv python3-pip && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/morphly
 
@@ -24,20 +25,25 @@ RUN git clone https://github.com/facebookresearch/seamless_communication.git /op
 
 COPY requirements.txt /opt/morphly/requirements.txt
 COPY requirements.meanvc-runtime.txt /opt/morphly/requirements.meanvc-runtime.txt
+COPY constraints.seamless.txt /opt/morphly/constraints.seamless.txt
 
-# MeanVC2 runtime does not import fairseq. fairseq is listed only in the
-# upstream evaluation dependency group, and conflicts with modern pip/
-# OmegaConf on Python 3.11. Keep the inference image lean and isolated.
-RUN python3.11 -m pip install torch==2.5.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121 && \
-    python3.11 -m pip install -r /opt/morphly/requirements.meanvc-runtime.txt && \
-    python3.11 -m pip install -r /opt/morphly/requirements.txt
+# Keep the two model stacks in separate virtual environments. Seamless/fairseq2
+# is ABI-coupled to PyTorch 2.2.2 while MeanVC2 is validated upstream on 2.5.1.
+RUN python3.11 -m venv /opt/venvs/meanvc && \
+    /opt/venvs/meanvc/bin/python -m pip install --upgrade "pip==24.0" "setuptools==69.5.1" "wheel==0.43.0" && \
+    /opt/venvs/meanvc/bin/python -m pip install torch==2.5.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121 && \
+    /opt/venvs/meanvc/bin/python -m pip install -r /opt/morphly/requirements.meanvc-runtime.txt && \
+    /opt/venvs/meanvc/bin/python -m pip install -r /opt/morphly/requirements.txt
 
-# Install Meta Seamless separately so fairseq2/PyTorch ABI problems are
-# visible as their own Docker layer instead of being mixed with MeanVC2.
-RUN cd /opt/seamless_communication && python3.11 -m pip install .
+RUN python3.11 -m venv /opt/venvs/seamless && \
+    /opt/venvs/seamless/bin/python -m pip install --upgrade "pip==24.0" "setuptools==67.8.0" "wheel==0.40.0" "packaging==23.2" && \
+    /opt/venvs/seamless/bin/python -m pip install torch==2.2.2 torchaudio==2.2.2 --index-url https://download.pytorch.org/whl/cu121 && \
+    cd /opt/seamless_communication && \
+    /opt/venvs/seamless/bin/python -m pip install -c /opt/morphly/constraints.seamless.txt .
 
 COPY . /opt/morphly
 
-RUN python3.11 scripts/verify_environment.py
+RUN /opt/venvs/meanvc/bin/python scripts/verify_environment.py --mode meanvc && \
+    /opt/venvs/seamless/bin/python scripts/verify_environment.py --mode seamless
 
-ENTRYPOINT ["python3.11", "scripts/smoke_test.py"]
+ENTRYPOINT ["/opt/venvs/meanvc/bin/python", "scripts/smoke_test.py"]
