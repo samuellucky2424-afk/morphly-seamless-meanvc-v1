@@ -1,0 +1,10 @@
+# Minimal dependencies imported by MeanVC2 runtime/run_rt.py and runtime/src/*
+# Training/evaluation-only packages (including fairseq and FunASR) are intentionally excluded.
+numpy>=1.26,<2.1
+soundfile>=0.12,<1
+einops==0.8.0
+x-transformers==2.2.11
+safetensors>=0.4,<1
+s3prl>=0.4
+omegaconf>=2.3
+PyYAML>=6.0
