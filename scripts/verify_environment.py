@@ -1,12 +1,20 @@
 from __future__ import annotations
 
+import argparse
 import importlib
 import json
 import subprocess
 import sys
 import torch
 
-MODULES = ["seamless_communication", "soundfile", "numpy"]
+p = argparse.ArgumentParser()
+p.add_argument("--mode", choices=["meanvc", "seamless"], required=True)
+args = p.parse_args()
+
+modules = {
+    "meanvc": ["torch", "torchaudio", "numpy", "soundfile", "einops", "x_transformers", "s3prl"],
+    "seamless": ["torch", "torchaudio", "fairseq2", "seamless_communication"],
+}[args.mode]
 
 def version(name: str):
     try:
@@ -15,22 +23,30 @@ def version(name: str):
     except Exception as exc:
         return f"ERROR: {type(exc).__name__}: {exc}"
 
-def pip_check():
-    p = subprocess.run(
-        [sys.executable, "-m", "pip", "check"],
-        text=True, capture_output=True
-    )
-    return {"code": p.returncode, "stdout": p.stdout.strip(), "stderr": p.stderr.strip()}
+check = subprocess.run(
+    [sys.executable, "-m", "pip", "check"],
+    text=True,
+    capture_output=True,
+)
 
 report = {
-    "python": sys.version,
+    "mode": args.mode,
+    "python_executable": sys.executable,
+    "python": sys.version.split()[0],
     "torch": torch.__version__,
     "torch_cuda": torch.version.cuda,
-    "cuda_available": torch.cuda.is_available(),
-    "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
-    "imports": {m: version(m) for m in MODULES},
-    "pip_check": pip_check(),
+    "cuda_available_at_build": torch.cuda.is_available(),
+    "imports": {m: version(m) for m in modules},
+    "pip_check": {
+        "code": check.returncode,
+        "stdout": check.stdout.strip(),
+        "stderr": check.stderr.strip(),
+    },
 }
 print(json.dumps(report, indent=2))
-if report["pip_check"]["code"] != 0:
-    raise SystemExit("Dependency consistency check failed.")
+
+bad_imports = [k for k, v in report["imports"].items() if str(v).startswith("ERROR:")]
+if bad_imports:
+    raise SystemExit(f"{args.mode}: import failures: {bad_imports}")
+if check.returncode != 0:
+    raise SystemExit(f"{args.mode}: dependency consistency check failed.")
