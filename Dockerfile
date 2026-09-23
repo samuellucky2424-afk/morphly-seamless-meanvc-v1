@@ -24,27 +24,17 @@ RUN git clone https://github.com/facebookresearch/seamless_communication.git /op
 
 COPY requirements.txt /opt/morphly/requirements.txt
 
-# MeanVC2's documented runtime baseline.
-# fairseq 0.12.x's PyPI sdist is broken with modern isolated builds
-# (missing fairseq/version.txt). Install it from its GitHub source tree instead.
+# MeanVC2 runtime baseline. Install fairseq from the upstream v0.12.2 source
+# tree because its PyPI sdist can fail under modern isolated builds.
 RUN python3.11 -m pip install torch==2.5.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121 && \
     git clone --branch v0.12.2 --depth 1 https://github.com/facebookresearch/fairseq.git /tmp/fairseq && \
     python3.11 -m pip install --no-build-isolation /tmp/fairseq && \
-    grep -v -E '^(torch|torchaudio|fairseq)([<>=].*)?
-
-# Seamless is installed separately because fairseq2 has a strict PyTorch ABI.
-# This is intentionally a separate layer so compatibility failures are obvious in build logs.
-RUN cd /opt/seamless_communication && python3.11 -m pip install .
-
-COPY . /opt/morphly
-
-ENTRYPOINT ["python3.11", "scripts/smoke_test.py"]
- /opt/MeanVC2/requirements.txt > /tmp/meanvc2-requirements.txt && \
+    sed -E '/^(torch|torchaudio|fairseq)([<>=].*)?$/d' /opt/MeanVC2/requirements.txt > /tmp/meanvc2-requirements.txt && \
     python3.11 -m pip install -r /tmp/meanvc2-requirements.txt && \
     python3.11 -m pip install -r /opt/morphly/requirements.txt
 
-# Seamless is installed separately because fairseq2 has a strict PyTorch ABI.
-# This is intentionally a separate layer so compatibility failures are obvious in build logs.
+# Install Meta Seamless separately so any fairseq2/PyTorch compatibility
+# problem is isolated in the Docker build log.
 RUN cd /opt/seamless_communication && python3.11 -m pip install .
 
 COPY . /opt/morphly
