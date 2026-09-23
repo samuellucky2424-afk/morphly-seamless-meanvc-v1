@@ -8,8 +8,10 @@ on:
       - "Dockerfile"
       - "requirements.txt"
       - "requirements.meanvc-runtime.txt"
+      - "requirements.worker.txt"
       - "constraints.seamless.txt"
       - "scripts/**"
+      - "serverless/**"
       - ".github/workflows/docker-build.yml"
 
 jobs:
