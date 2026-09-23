@@ -23,20 +23,21 @@ RUN git clone https://github.com/facebookresearch/seamless_communication.git /op
     git -C /opt/MeanVC2 checkout "$MEANVC2_REF"
 
 COPY requirements.txt /opt/morphly/requirements.txt
+COPY requirements.meanvc-runtime.txt /opt/morphly/requirements.meanvc-runtime.txt
 
-# MeanVC2 runtime baseline. Install fairseq from the upstream v0.12.2 source
-# tree because its PyPI sdist can fail under modern isolated builds.
+# MeanVC2 runtime does not import fairseq. fairseq is listed only in the
+# upstream evaluation dependency group, and conflicts with modern pip/
+# OmegaConf on Python 3.11. Keep the inference image lean and isolated.
 RUN python3.11 -m pip install torch==2.5.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121 && \
-    git clone --branch v0.12.2 --depth 1 https://github.com/facebookresearch/fairseq.git /tmp/fairseq && \
-    python3.11 -m pip install --no-build-isolation /tmp/fairseq && \
-    sed -E '/^(torch|torchaudio|fairseq)([<>=].*)?$/d' /opt/MeanVC2/requirements.txt > /tmp/meanvc2-requirements.txt && \
-    python3.11 -m pip install -r /tmp/meanvc2-requirements.txt && \
+    python3.11 -m pip install -r /opt/morphly/requirements.meanvc-runtime.txt && \
     python3.11 -m pip install -r /opt/morphly/requirements.txt
 
-# Install Meta Seamless separately so any fairseq2/PyTorch compatibility
-# problem is isolated in the Docker build log.
+# Install Meta Seamless separately so fairseq2/PyTorch ABI problems are
+# visible as their own Docker layer instead of being mixed with MeanVC2.
 RUN cd /opt/seamless_communication && python3.11 -m pip install .
 
 COPY . /opt/morphly
+
+RUN python3.11 scripts/verify_environment.py
 
 ENTRYPOINT ["python3.11", "scripts/smoke_test.py"]
