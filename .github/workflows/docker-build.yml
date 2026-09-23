@@ -8,6 +8,7 @@ on:
       - "Dockerfile"
       - "requirements.txt"
       - "requirements.meanvc-runtime.txt"
+      - "constraints.seamless.txt"
       - "scripts/**"
       - ".github/workflows/docker-build.yml"
 
