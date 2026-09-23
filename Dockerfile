@@ -6,7 +6,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
     HF_HOME=/models/huggingface \
     TORCH_HOME=/models/torch \
     MEANVC_PY=/opt/venvs/meanvc/bin/python \
-    SEAMLESS_PY=/opt/venvs/seamless/bin/python
+    SEAMLESS_PY=/opt/venvs/seamless/bin/python \
+    WORKER_PY=/opt/venvs/worker/bin/python \
+    MODEL_SERVER_PORT=18000
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git git-lfs ffmpeg libsndfile1 libsndfile1-dev build-essential ca-certificates curl \
@@ -25,10 +27,11 @@ RUN git clone https://github.com/facebookresearch/seamless_communication.git /op
 
 COPY requirements.txt /opt/morphly/requirements.txt
 COPY requirements.meanvc-runtime.txt /opt/morphly/requirements.meanvc-runtime.txt
+COPY requirements.worker.txt /opt/morphly/requirements.worker.txt
 COPY constraints.seamless.txt /opt/morphly/constraints.seamless.txt
 
-# Keep the two model stacks in separate virtual environments. Seamless/fairseq2
-# is ABI-coupled to PyTorch 2.2.2 while MeanVC2 is validated upstream on 2.5.1.
+# MeanVC2 and Seamless/fairseq2 require different PyTorch ABI stacks.
+# Keep them isolated and communicate between services over loopback later.
 RUN python3.11 -m venv /opt/venvs/meanvc && \
     /opt/venvs/meanvc/bin/python -m pip install --upgrade "pip==24.0" "setuptools==69.5.1" "wheel==0.43.0" && \
     /opt/venvs/meanvc/bin/python -m pip install torch==2.5.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121 && \
@@ -41,9 +44,16 @@ RUN python3.11 -m venv /opt/venvs/seamless && \
     cd /opt/seamless_communication && \
     /opt/venvs/seamless/bin/python -m pip install -c /opt/morphly/constraints.seamless.txt .
 
+RUN python3.11 -m venv /opt/venvs/worker && \
+    /opt/venvs/worker/bin/python -m pip install --upgrade "pip==24.0" && \
+    /opt/venvs/worker/bin/python -m pip install -r /opt/morphly/requirements.worker.txt
+
 COPY . /opt/morphly
 
 RUN /opt/venvs/meanvc/bin/python scripts/verify_environment.py --mode meanvc && \
-    /opt/venvs/seamless/bin/python scripts/verify_environment.py --mode seamless
+    /opt/venvs/seamless/bin/python scripts/verify_environment.py --mode seamless && \
+    /opt/venvs/worker/bin/python -c "from vastai import Worker, WorkerConfig, HandlerConfig, BenchmarkConfig, LogActionConfig; print('VAST_WORKER_IMPORT_OK')" && \
+    chmod +x /opt/morphly/serverless/start.sh
 
-ENTRYPOINT ["/opt/venvs/meanvc/bin/python", "scripts/smoke_test.py"]
+EXPOSE 3000 3001
+ENTRYPOINT ["bash", "/opt/morphly/serverless/start.sh"]
