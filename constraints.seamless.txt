@@ -1,0 +1,4 @@
+torch==2.2.2
+torchaudio==2.2.2
+packaging==23.2
+wheel==0.40.0
